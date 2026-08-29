@@ -48,6 +48,7 @@
 - `retrieval_method`：获取方式，例如 `api`、`bulk_file`、`rss`、`web_page`。
 - `ingested_at`：系统实际采集到数据的时间。
 - `available_at`：策略、回测或评分允许使用该数据的最早时间。
+- `data_cutoff_at`：本次请求或回测允许看到的数据截止时间。
 - `payload_hash`：原始内容的 SHA-256 hash，用于去重和审计。
 - `raw_storage_path`：原始数据落盘位置。
 
@@ -76,6 +77,16 @@ data/
 - 生成唯一文件名。
 - 创建目录。
 - 返回 `RawArtifact`。
+
+`RawStorage.save_raw_payload()` 只负责保存原始数据，不按回测截止时间拒绝落盘。
+
+后续特征生成、回测或研究任务需要通过 `manifest.available_artifacts(data_cutoff_at)` 筛选当时可见的数据：
+
+```text
+available_at <= data_cutoff_at
+```
+
+如果原始数据的 `available_at` 晚于本次请求允许看到的数据截止时间，可以被保存为原始数据，但不能进入那次回测或研究任务的可见数据集。
 
 ### 2.4 `backend/app/data_ingestion/providers/__init__.py`
 
@@ -112,7 +123,9 @@ def fetch(self, request: IngestionRequest) -> ProviderFetchResult:
 - `RawStorage.save_raw_payload()` 能保存 JSON 原始数据。
 - 保存路径按 source、dataset、ticker 分层。
 - `payload_hash` 与落盘文件内容一致。
+- `manifest.available_artifacts(data_cutoff_at)` 能过滤晚于截止时间的数据。
 - `IngestionRunManifest.finish()` 能正确结束任务。
+- 失败任务能保存错误类型、重试标记和排查详情。
 - `write_manifest()` 能写出可读取的 JSON 审计文件。
 
 ## 3. 模块职责划分

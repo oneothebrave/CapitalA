@@ -1,7 +1,5 @@
 """Filesystem storage helpers for raw ingestion payloads and manifests."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 from datetime import datetime
@@ -10,7 +8,12 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.config import settings
-from app.data_ingestion.manifest import IngestionRunManifest, RawArtifact, SourceType, utc_now
+from app.data_ingestion.manifest import (
+    IngestionRunManifest,
+    RawArtifact,
+    SourceType,
+    utc_now,
+)
 
 
 class RawStorage:
@@ -40,6 +43,8 @@ class RawStorage:
         content = self._serialize_payload(payload, media_type)
         payload_hash = hashlib.sha256(content).hexdigest()
         ingested_at = utc_now()
+        effective_available_at = available_at or ingested_at
+
         suffix = file_extension or self._extension_for_media_type(media_type)
         file_name = f"{ingested_at.strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex}{suffix}"
 
@@ -67,7 +72,7 @@ class RawStorage:
             byte_size=len(content),
             source_url=source_url,
             ingested_at=ingested_at,
-            available_at=available_at or ingested_at,
+            available_at=effective_available_at,
             metadata=metadata or {},
         )
 

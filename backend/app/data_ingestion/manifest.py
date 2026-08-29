@@ -1,12 +1,10 @@
 """Pydantic models for ingestion run audit manifests."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 SourceType = Literal[
     "sec",
@@ -30,6 +28,15 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def require_timezone_aware(value: datetime | None) -> datetime | None:
+    """Reject naive datetimes so point-in-time comparisons are explicit."""
+
+    if value is not None and value.utcoffset() is None:
+        msg = "datetime fields must be timezone-aware"
+        raise ValueError(msg)
+    return value
+
+
 class IngestionRequest(BaseModel):
     """Input and source metadata for one external retrieval request."""
 
@@ -44,8 +51,9 @@ class IngestionRequest(BaseModel):
     cik: str | None = None
     accession_number: str | None = None
     as_of_date: str | None = None
+    data_cutoff_at: AwareDatetime | None = None
     request_params: dict[str, Any] = Field(default_factory=dict)
-    requested_at: datetime = Field(default_factory=utc_now)
+    requested_at: AwareDatetime = Field(default_factory=utc_now)
 
 
 class RawArtifact(BaseModel):
@@ -64,11 +72,11 @@ class RawArtifact(BaseModel):
     payload_hash: str
     byte_size: int
     source_url: str | None = None
-    source_published_at: datetime | None = None
-    source_updated_at: datetime | None = None
-    accepted_at: datetime | None = None
-    ingested_at: datetime = Field(default_factory=utc_now)
-    available_at: datetime = Field(default_factory=utc_now)
+    source_published_at: AwareDatetime | None = None
+    source_updated_at: AwareDatetime | None = None
+    accepted_at: AwareDatetime | None = None
+    ingested_at: AwareDatetime = Field(default_factory=utc_now)
+    available_at: AwareDatetime = Field(default_factory=utc_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -79,7 +87,7 @@ class IngestionError(BaseModel):
     error_type: str | None = None
     retryable: bool = False
     details: dict[str, Any] = Field(default_factory=dict)
-    occurred_at: datetime = Field(default_factory=utc_now)
+    occurred_at: AwareDatetime = Field(default_factory=utc_now)
 
 
 class IngestionRunManifest(BaseModel):
@@ -91,8 +99,8 @@ class IngestionRunManifest(BaseModel):
     source_type: SourceType
     source_name: str
     status: IngestionStatus = "running"
-    started_at: datetime = Field(default_factory=utc_now)
-    finished_at: datetime | None = None
+    started_at: AwareDatetime = Field(default_factory=utc_now)
+    finished_at: AwareDatetime | None = None
     request: IngestionRequest | None = None
     artifacts: list[RawArtifact] = Field(default_factory=list)
     errors: list[IngestionError] = Field(default_factory=list)
@@ -105,7 +113,7 @@ class IngestionRunManifest(BaseModel):
     def add_error(self, error: IngestionError) -> None:
         self.errors.append(error)
 
-    def finish(self, status: IngestionStatus | None = None) -> IngestionRunManifest:
+    def finish(self, status: IngestionStatus | None = None) -> Self:
         if status is not None:
             self.status = status
         elif self.errors and self.artifacts:
@@ -117,3 +125,13 @@ class IngestionRunManifest(BaseModel):
 
         self.finished_at = utc_now()
         return self
+
+    def available_artifacts(self, data_cutoff_at: datetime) -> list[RawArtifact]:
+        """Return only artifacts available at or before the supplied cutoff."""
+
+        require_timezone_aware(data_cutoff_at)
+        return [
+            artifact
+            for artifact in self.artifacts
+            if artifact.available_at <= data_cutoff_at
+        ]
