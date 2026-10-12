@@ -1,5 +1,7 @@
 # 美股量化研究系统第一版需求与架构文档
 
+维护日期：2026-10-12。本文说明目标设计，已实现进度与跨设备接力步骤见 [HANDOFF.md](../HANDOFF.md)。数据采集细化设计见 [数据采集层设计](data-ingestion-layer-sources-v1.md)。
+
 ## 1. 项目定位
 
 本项目的目标是构建一个面向美股的量化研究与智能研判系统。
@@ -295,7 +297,7 @@ SEC EDGAR 提供 submissions 和 XBRL company facts API，可作为第一版官�
 - 保存标题、正文、来源、发布时间、URL
 - 去重
 - 标准化时区
-- 提取摘要、情绪、事件类型、影响方向
+- 保存用于后续处理的原始摘要与正文；情绪、事件类型和影响方向由标准化或特征层生成
 
 第一版不做：
 
@@ -316,12 +318,12 @@ SEC EDGAR 提供 submissions 和 XBRL company facts API，可作为第一版官�
 
 ## 8. 数据存储层
 
-建议第一版采用：
+当前已确认使用文件系统，采集层已有原始 payload 和 manifest 的落盘实现。PostgreSQL、DuckDB 或两者结合仍是后续待定选型。
 
 ```text
-PostgreSQL：结构化主库
-DuckDB：本地研究、批量分析、回测加速
 文件系统：保存原始 JSON、HTML、新闻正文、报告
+采集 manifest：保存请求、原始文件索引、时间、hash、错误和任务状态
+后续数据库：开发到持久化需求时再决定
 ```
 
 数据分层：
@@ -663,7 +665,7 @@ LLM 输出：
 
 第一版建议采用模块化单体，不建议一开始拆微服务。
 
-建议目录结构：
+当前已纳入 Git 的主要目录结构：
 
 ```text
 backend/
@@ -671,6 +673,7 @@ backend/
     api/
     core/
     data_ingestion/
+      providers/
       market_data/
       sec_filings/
       fundamentals/
@@ -684,31 +687,35 @@ backend/
     jobs/
     storage/
   tests/
-  scripts/
-  notebooks/
-frontend/
-  src/
+data/
+  raw/
+  normalized/
+  features/
+  reports/
 docs/
 ```
 
-推荐技术栈：
+`data/manifests/ingestion_runs/` 由采集存储函数按需创建。除采集通用契约、文件存储和 API 骨架外，多数业务目录只有包占位文件。根目录本地的空 `scripts/`、`notebooks/` 未纳入 Git，克隆后不会自动出现。
+
+已确认技术栈：
 
 ```text
-Python：数据处理、特征工程、回测、NLP
+Python 3.13+ / uv：运行环境与依赖管理
 FastAPI：后端 API
-PostgreSQL：结构化主库
-DuckDB：本地研究和批量分析
-Pandas / Polars：数据处理
-SQLAlchemy：数据库访问
-React / Next.js：前端
-APScheduler / Prefect / Dagster：任务调度
-TypeSafe AI / 通用 LLM：候选文本事件分类器，必须通过统一接口接入
+Pydantic / pydantic-settings：数据契约与配置
+文件系统：原始数据和 manifest
+pytest / Ruff：测试与静态检查
 ```
 
-MVP 可以更简单：
+后续候选选型，均未接入：
 
 ```text
-Python + FastAPI + DuckDB + 文件系统 + 简单前端
+PostgreSQL / DuckDB：后续持久化与研究查询
+Pandas / Polars：数据处理
+SQLAlchemy：若采用数据库后的访问层候选
+前端 / CLI：交互入口待定
+APScheduler / Prefect / Dagster：任务调度候选
+TypeSafe AI / 通用 LLM：候选文本事件分类器，必须通过统一接口接入
 ```
 
 数据库和外部服务可以逐步增强，不应在第一版过早复杂化。
@@ -1042,6 +1049,8 @@ agent_simulation/
 - 中国大陆用户交易美股还涉及合规、外汇、税务和券商限制
 
 ## 19. 第一版开发优先级
+
+截至 2026-10-12，项目骨架和采集层通用契约已完成；ticker 注册表及后续业务能力尚未实现。具体采集 provider、任务编排和重试/限流机制均待开发。下一步从 ticker 注册表继续，范围与数据来源先确认。
 
 建议按以下顺序开发：
 

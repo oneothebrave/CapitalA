@@ -1,32 +1,32 @@
 # 数据采集层信息媒介设计 v1
 
+维护日期：2026-10-12。本文同时记录采集层目标设计和当前已实现的通用契约；未实现项不得视为现有功能。项目进度见 [HANDOFF.md](../HANDOFF.md)。
+
 ## 1. 目的
 
-本文档重新审视第一版“数据采集层应该从哪些媒介获取信息”的结论，并给出修订后的设计口径。
+本文档定义第一版数据采集层的信息来源、获取媒介、数据对象、优先级和工程契约。
 
 第一版系统目标是：用户输入一个美股 ticker，系统基于行情、SEC 公告、财报、新闻等数据，生成可解释、可回测、可追溯的单股研究结论。
 
 因此，数据采集层的核心职责不是做投资判断，而是稳定、可追溯、按真实可用时间保存原始信息，为后续标准化、特征工程、评分、回测和报告生成提供可信输入。
 
-## 2. 对上一版结论的专业修订
+## 2. 设计依据
 
-上一版方向总体正确，但有几处需要收紧。
+采集层遵守以下要求。
 
 ### 2.1 区分“信息媒介”“数据对象”“供应商”
 
-上一版把三类概念混在了一起：
+以下三类概念应分别建模：
 
 - 信息媒介：API、批量文件、RSS、网页、SEC EDGAR、交易所目录、公司 IR 页面等。
 - 数据对象：ticker、OHLCV、10-K、10-Q、新闻、公司行动、基准指数等。
 - 数据供应商：行情 API、新闻 API、基本面数据商等。
 
-修订方案：数据采集层文档按“权威来源 + 获取媒介 + 数据对象 + 第一版优先级”组织，不先锁定具体商业供应商。
+数据采集层按“权威来源 + 获取媒介 + 数据对象 + 第一版优先级”组织，不先锁定具体商业供应商。
 
 ### 2.2 强化 point-in-time 约束
 
-上一版提到了 `published_at`、`ingested_at`、`available_at`，但还不够明确。
-
-修订方案：所有会进入回测或评分的数据，必须记录策略真实可用时间。尤其是：
+所有会进入回测或评分的数据，必须记录策略真实可用时间。尤其是：
 
 - SEC 文件不能只用 `filing_date`，还要记录 SEC 接收/发布相关时间。
 - 新闻不能只用网页展示时间，还要记录采集时间和策略允许使用时间。
@@ -35,15 +35,15 @@
 
 ### 2.3 公司行动应前置为核心数据
 
-上一版把公司行动放在中后段，但复权、拆股、分红、ticker 变更会直接影响行情连续性、收益计算和回测可信度。
+复权、拆股、分红、ticker 变更会直接影响行情连续性、收益计算和回测可信度。
 
-修订方案：公司行动应与行情数据一起作为第一版核心采集对象，而不是后续增强项。
+公司行动应与行情数据一起作为第一版核心采集对象。
 
 ### 2.4 SEC company facts 不能替代原始 filing
 
 SEC company facts 很适合作为结构化入口，但它是聚合后的 XBRL 事实视图。对回测来说，仅依赖聚合数据容易产生“后来修正的数据被历史使用”的风险。
 
-修订方案：
+要求：
 
 - 原始 10-K、10-Q、8-K、XBRL/inline XBRL 必须保存。
 - `companyfacts` 可以用于快速提取和校验。
@@ -53,7 +53,7 @@ SEC company facts 很适合作为结构化入口，但它是聚合后的 XBRL �
 
 第一版不做全市场新闻扫描，也不做“新闻先行反推股票”。
 
-修订方案：
+要求：
 
 - 新闻入口必须从已注册 ticker 出发。
 - 每条新闻必须记录 ticker 绑定方式和置信度。
@@ -64,7 +64,7 @@ SEC company facts 很适合作为结构化入口，但它是聚合后的 XBRL �
 
 如果后续接入 OpenAI API，它应属于新闻结构化、事件抽取、报告生成或摘要表达能力，不是原始数据采集媒介。
 
-修订方案：在数据采集层只保存原始新闻、公告、财报材料；LLM 处理结果应放在 normalization、features 或 reports 层，并保留输入版本。
+在数据采集层只保存原始新闻、公告、财报材料；LLM 处理结果应放在 normalization、features 或 reports 层，并保留输入版本。TypeSafe AI / Jev 同样属于候选事件分类器，具体约束见架构文档第 10.5.1 节。
 
 ## 3. 数据采集层边界
 
@@ -416,7 +416,7 @@ SEC company facts 很适合作为结构化入口，但它是聚合后的 XBRL �
 - `dedupe_key`
 - `raw_storage_path`
 
-第一版优先级：建议，但必须保持 ticker 绑定。
+第一版优先级：最小闭环需要 ticker 绑定新闻；具体供应商待定，来源不足时必须在报告中标明覆盖缺失。
 
 设计注意：
 
@@ -505,9 +505,9 @@ SEC company facts 很适合作为结构化入口，但它是聚合后的 XBRL �
 8. SEC XBRL / company facts。
 9. SPY / QQQ 基准行情。
 
-### 5.2 建议接入
+### 5.2 新闻与增强来源
 
-1. ticker 绑定新闻。
+1. ticker 绑定新闻，属于第一版最小闭环，具体来源待定。
 2. 公司 IR earnings release。
 3. 8-K exhibits。
 4. earnings presentation。
@@ -536,7 +536,7 @@ SEC company facts 很适合作为结构化入口，但它是聚合后的 XBRL �
 
 ## 6. 统一采集记录协议
 
-无论来自哪种媒介，采集层都应尽量保存以下元数据。
+以下是目标元数据协议，不代表每个字段已经实现。当前模型与存储函数的实际契约见第 11 节。
 
 ```text
 source_type
@@ -580,44 +580,35 @@ dedupe_key
 - `available_at` 的推导规则必须版本化。
 - 不允许后续层直接使用没有可用时间的数据进入回测。
 
-## 7. 文件系统存储建议
+## 7. 文件系统存储
 
-项目骨架阶段暂不接 PostgreSQL，因此第一版可先使用文件系统保存原始数据。
+当前采用文件系统。`RawStorage` 已实现下列动态目录规则；所有具体数据源仍待接入。
 
-建议结构：
+已实现的路径结构：
 
 ```text
 data/
   raw/
-    sec/
-      submissions/
-      filings/
-      xbrl_companyfacts/
-    market_data/
-      daily_bars/
-      corporate_actions/
-      benchmarks/
-    reference/
-      symbol_directory/
-      ticker_cik/
-    news/
-      articles/
-      press_releases/
-    ir/
-      earnings_releases/
-      presentations/
-    macro/
-      fred/
-      cboe/
+    <source_type>/
+      <provider_dataset>/
+        <TICKER 或 CIK0000000000>/
+          <UTC 时间>-<UUID>.<扩展名>
   manifests/
     ingestion_runs/
-    source_snapshots/
+      <job_name>/
+        <run_id>.json
   normalized/
   features/
   reports/
 ```
 
-每次采集任务应生成 manifest，记录：
+有 ticker 时按大写 ticker 分目录；没有 ticker 但有 CIK 时使用补齐十位的 CIK；二者均缺失时直接保存在 dataset 目录。目录按需创建，`source_name` 当前只写入元数据，不参与文件路径。
+
+dataset 名称由后续 provider 定义，例如 `submissions`、`daily_bars`、`ticker_cik` 和 `articles`，目前还没有固定的全局 dataset 注册表。
+
+原始文件及 manifest 均属于本地运行产物，不提交 Git。迁移真实数据时两者必须配套保留；当前 `raw_storage_path` 使用本地路径，跨设备需要核对或重定位。未来 `source_snapshots/` 等目录尚未实现。
+
+后续每次真实采集任务应生成 manifest，目标记录包括：
 
 - job name。
 - job version。
@@ -648,7 +639,7 @@ data/
 
 ## 9. 建议的工程实现顺序
 
-1. 定义 `data_ingestion` 模块接口和原始数据 manifest。
+1. 通用接口、原始数据落盘和 manifest 已完成，继续复用现有契约。
 2. 实现 ticker 注册表采集任务。
 3. 实现 SEC CIK/ticker 映射采集任务。
 4. 实现交易所 symbol directory 采集任务。
@@ -671,3 +662,58 @@ data/
 - [FRED API](https://fred.stlouisfed.org/docs/api/fred/fred/)
 - [Cboe VIX Historical Data](https://www.cboe.com/tradable_products/vix/vix_historical_data)
 
+## 11. 当前已实现的最小采集契约
+
+本节合并原 `data-ingestion-minimal-skeleton.md` 中仍有效的技术说明，以当前代码为准。
+
+### 11.1 模型与接口
+
+| 文件 | 已实现内容 |
+| --- | --- |
+| `backend/app/data_ingestion/manifest.py` | `IngestionRequest`、`RawArtifact`、`IngestionError`、`IngestionRunManifest` |
+| `backend/app/data_ingestion/providers/base.py` | `IngestionProvider.fetch(request)` 同步协议及 `ProviderFetchResult` 响应封装 |
+| `backend/app/data_ingestion/storage.py` | `RawStorage.save_raw_payload()` 及 `write_manifest()` |
+| `backend/app/data_ingestion/__init__.py` | 对外导出上述模型和存储工具 |
+| `backend/app/storage/file_store.py` | 通用文件路径及创建目录助手 |
+
+`ProviderFetchResult` 包含原始 `payload`、`media_type`、`source_url`、`provider_record_id` 和 `metadata`。provider 仅负责取数据，存储函数负责落盘，manifest 负责审计；标准化、特征和评分由后续层处理。
+
+### 11.2 原始文件与时间
+
+`save_raw_payload()` 支持 bytes、字符串、字典和列表。bytes 直接保存，字符串使用 UTF-8，JSON 对象按固定键顺序序列化后保存；hash 是落盘内容的 SHA-256，不一定是供应商 HTTP 响应字节的 hash。必须保留原始响应字节时，应传入 bytes。
+
+每次保存生成新的 UUID 文件名，返回 `RawArtifact`，包含来源、路径、hash、字节数、ticker/CIK、`ingested_at` 和 `available_at` 等字段。hash 已用于审计，但尚无自动去重或防重复下载逻辑。
+
+未指定 `available_at` 时，存储函数保守使用本次 `ingested_at`。时间模型使用带时区类型，拒绝无时区时间；真实数据的 `available_at` 推导规则仍需在各 provider/任务中定义和版本化。
+
+存储函数不会根据请求截止时间拒绝原始数据落盘。调用方必须显式使用 `manifest.available_artifacts(data_cutoff_at)`，筛选 `available_at <= data_cutoff_at` 的文件。仅在 `IngestionRequest` 中填写截止时间不会自动执行过滤。
+
+### 11.3 Manifest 与任务编排
+
+manifest 包含任务名称/版本、run id、请求、时间、原始文件列表、错误、警告和 metadata。`finish()` 可显式指定终态；未指定时，有文件及错误则为 `partial_success`，仅有错误则为 `failed`，无错误则为 `success`。空结果也可得到 `success`，真实任务需自行检测数据覆盖完整性。
+
+`write_manifest()` 将审计记录写成 JSON；重复写同一 `run_id` 会覆盖该 manifest。原始文件保留与审计记录生命周期管理尚待真实任务设计。
+
+后续任务应完成以下流程，目前没有实际执行这些步骤的 job：
+
+```text
+构造 IngestionRequest 和 IngestionRunManifest
+        ↓
+provider.fetch(request)
+        ↓
+RawStorage.save_raw_payload()
+        ↓
+manifest.add_artifact() / add_error()
+        ↓
+manifest.finish() → write_manifest()
+        ↓
+按可用时间筛选后交给 normalization 层
+```
+
+### 11.4 已有验证与待补充项
+
+`backend/tests/test_data_ingestion_skeleton.py` 有 6 项离线测试，覆盖 JSON 落盘及 hash、manifest 序列化、成功/失败记录、截止时间过滤和无时区时间拒绝。另有 1 项 API 健康检查测试。真实网络采集没有测试，也没有实现。
+
+接入真实 provider 前需要补充请求超时、限流、重试策略、数据完整性检测、来源时间传递，以及路径参数和落盘前的输入校验。`RawArtifact` 虽声明来源发布/修订/接收时间及记录 ID，当前存储函数未提供全部对应参数，不能宣称已完整传播这些字段。
+
+`httpx` 当前只在开发依赖组；后续 provider 如果使用它，应明确声明为运行依赖。下一步实现 ticker 注册表和基础映射，不沿用旧文档中优先增加 SEC job 的过时安排。

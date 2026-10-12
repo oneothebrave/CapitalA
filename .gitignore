@@ -24,6 +24,7 @@ build/
 
 # Local data artifacts
 data/raw/*
+data/manifests/*
 data/normalized/*
 data/features/*
 data/reports/*
